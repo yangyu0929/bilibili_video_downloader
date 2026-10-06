@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>B站视频下载</title>
+<style>
+:root{font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:#172b3d;background:#f1f5f9;color-scheme:light}*{box-sizing:border-box}body{margin:0;padding:48px 20px}main{max-width:820px;margin:auto}.badge{font-size:12px;font-weight:700;letter-spacing:2px;color:#1685ad}h1{font-size:36px;margin:10px 0}p{color:#64748b;line-height:1.7}.card{background:#fff;border:1px solid #dfe7ee;border-radius:18px;padding:28px;margin:24px 0;box-shadow:0 10px 30px #15364c06}label{display:block;font-size:14px;font-weight:600;margin-bottom:9px}input,select,textarea{width:100%;border:1px solid #cbd5e1;border-radius:9px;padding:12px;font:inherit;background:#fff;color:inherit}textarea{resize:vertical;min-height:94px}input:focus,textarea:focus,select:focus{outline:3px solid #38bdf833;border-color:#0ea5e9}.field{margin-bottom:22px}.row{display:grid;grid-template-columns:1fr 180px;gap:18px}.hint{font-size:12px;color:#64748b;margin:7px 0 0}button{border:0;border-radius:9px;padding:12px 24px;font:inherit;font-weight:600;cursor:pointer;background:#0b88bb;color:#fff}button.secondary{background:#edf2f7;color:#334155}button:disabled{opacity:.45;cursor:default}.actions{display:flex;gap:12px;align-items:center}details{margin:4px 0 24px}summary{cursor:pointer;color:#526479;font-size:14px}details .field{margin:16px 0}.status-head{display:flex;justify-content:space-between;gap:14px;align-items:center}.status-head h2{font-size:17px;margin:0}.pill{font-size:12px;background:#e8f4fa;color:#147398;border-radius:20px;padding:6px 12px}progress{width:100%;height:12px;accent-color:#0b88bb;margin:20px 0 8px}.metrics{display:flex;justify-content:space-between;gap:12px;color:#64748b;font-size:13px}#title{font-size:14px;overflow-wrap:anywhere;margin-bottom:0}#error{color:#be123c;font-size:14px;white-space:pre-wrap}#files{padding:0;list-style:none;font-size:13px;overflow-wrap:anywhere}#files li{padding:12px;background:#ecfdf5;border-radius:8px;margin-top:8px}pre{background:#0f2030;color:#c7dae7;padding:16px;max-height:250px;overflow:auto;font-size:12px;white-space:pre-wrap;word-break:break-word;border-radius:9px}footer{font-size:12px;color:#7c8b9a;line-height:1.8}@media(max-width:600px){body{padding:26px 14px}.card{padding:20px}.row{grid-template-columns:1fr}h1{font-size:29px}}
+</style>
+</head>
+<body><main>
+<div class="badge">BILIBILI · LOCAL DOWNLOADER</div>
+<h1>把喜欢的视频，保存下来。</h1>
+<p>粘贴链接，选择画质，下载到你的电脑。</p>
+<form class="card" id="form">
+<div class="field"><label for="url">视频链接 / BV 号</label><textarea id="url" placeholder="https://www.bilibili.com/video/BV…&#10;也可以直接粘贴 B站分享文字或 b23.tv 短链接" required></textarea></div>
+<div class="row"><div class="field"><label for="output">保存目录</label><input id="output" placeholder="使用程序内的 downloads 文件夹"><p class="hint">可填写其他文件夹的完整路径；不存在时自动创建。</p></div><div class="field"><label for="quality">清晰度上限</label><select id="quality"><option value="1080">1080P</option><option value="best">最高可用</option><option value="720">720P</option><option value="480">480P</option></select></div></div>
+<details><summary>登录凭证（可选）</summary><div class="field"><label for="cookie">Netscape 格式 Cookie 文件路径</label><input id="cookie" autocomplete="off" placeholder="例如 C:\Users\你的用户名\cookies.txt"><p class="hint">部分画质或视频需登录后才能访问。文件仅由本机下载工具读取，用于向 B站发起请求；请妥善保管。</p></div></details>
+<div class="actions"><button id="start" type="submit">开始下载</button><button id="cancel" class="secondary" type="button" disabled>取消下载</button></div><div id="error" role="alert"></div>
+</form>
+<section class="card" aria-live="polite"><div class="status-head"><h2 id="message">准备就绪</h2><span class="pill" id="status">等待下载</span></div><p id="title"></p><progress id="progress" max="100" value="0"></progress><div class="metrics"><span id="percent">0%</span><span id="speed"></span><span id="eta"></span></div><p class="hint">音频和视频可能分别下载，进度会按当前文件显示；完成后自动合并。</p><ul id="files"></ul><details style="margin-bottom:0"><summary>查看运行日志</summary><pre id="logs">暂无日志</pre></details></section>
+<footer>清晰度取决于视频源和账号权限。仅下载你拥有或已获授权的内容。<br>支持普通视频及可访问的番剧播放页；多分 P 视频默认下载链接指定的一 P。关闭启动窗口即可退出程序。</footer>
+</main>
+<script>
+const token=new URLSearchParams(location.search).get('token');
+const $=id=>document.getElementById(id);
+let pending=false, initialized=false, polling=false;
+async function api(path,body){const response=await fetch(path,{method:body?'POST':'GET',headers:{'X-App-Token':token,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});const data=await response.json();if(!response.ok)throw Error(data.error||'请求失败');return data;}
+function render(s){if(!initialized){$('output').value=s.default_output;initialized=true;}const running=s.status==='running';$('start').disabled=running||pending;$('cancel').disabled=!running;$('message').textContent=s.message;$('status').textContent=({idle:'等待下载',running:'进行中',done:'已完成',error:'遇到问题',cancelled:'已取消'})[s.status];$('title').textContent=s.title;$('progress').value=s.percent;$('percent').textContent=s.percent.toFixed(1)+'%';$('speed').textContent=s.speed;$('eta').textContent=s.eta?'预计剩余 '+s.eta:'';$('logs').textContent=s.logs.join('\n')||'暂无日志';$('files').replaceChildren(...s.files.map(file=>{const li=document.createElement('li');li.textContent='已保存：'+file;return li;}));}
+async function refresh(){if(polling)return;polling=true;try{render(await api('/api/state'));}catch(e){$('message').textContent='无法连接本地程序，请检查启动窗口。';$('start').disabled=true;$('cancel').disabled=true;}finally{polling=false;}}
+$('form').addEventListener('submit',async event=>{event.preventDefault();if(pending)return;pending=true;$('start').disabled=true;$('error').textContent='';try{await api('/api/start',{url:$('url').value,output:$('output').value,quality:$('quality').value,cookie:$('cookie').value});}catch(e){$('error').textContent=e.message;}finally{pending=false;await refresh();}});
+$('cancel').addEventListener('click',async()=>{$('cancel').disabled=true;try{await api('/api/cancel',{});}catch(e){$('error').textContent=e.message;}await refresh();});
+refresh();setInterval(refresh,1000);
+</script></body></html>
