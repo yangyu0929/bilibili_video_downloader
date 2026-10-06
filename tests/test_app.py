@@ -56,6 +56,13 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(manager.snapshot()['status'], 'error')
         self.assertIn('ERROR: denied', manager.snapshot()['logs'])
 
+    def test_selected_media_logged(self):
+        manager = app.DownloadManager()
+        script = "import json; print('__MEDIA__'+json.dumps({'width':1920,'height':1080,'fps':30,'vcodec':'avc1','acodec':'mp4a'}))"
+        manager.run([sys.executable, '-c', script])
+        self.assertEqual(manager.snapshot()['status'], 'done')
+        self.assertIn('avc1', manager.snapshot()['logs'][0])
+
     def test_cancel_stops_worker(self):
         manager = app.DownloadManager()
         manager.thread = threading.Thread(target=manager.run, args=([sys.executable, '-u', '-c', 'import time; print("started"); time.sleep(30)'],))
@@ -123,6 +130,39 @@ class ServerTests(unittest.TestCase):
         status, body = self.request('POST', '/api/start', {'url': 'bad'}, {'X-App-Token': self.server.token})
         self.assertEqual(status, 400)
         self.assertIn('链接', json.loads(body)['error'])
+
+
+class FormatSelectionTests(unittest.TestCase):
+    def select(self, playback, extra=None):
+        import yt_dlp
+        formats = [
+            {'format_id': 'h264', 'height': 1080, 'width': 1920, 'fps': 30, 'vcodec': 'avc1.640028', 'acodec': 'none', 'ext': 'mp4'},
+            {'format_id': 'av1', 'height': 1080, 'width': 1920, 'fps': 30, 'vcodec': 'av01.0.08M.08', 'acodec': 'none', 'ext': 'mp4'},
+            {'format_id': 'audio', 'vcodec': 'none', 'acodec': 'mp4a.40.2', 'ext': 'm4a'},
+        ]
+        if extra:
+            formats.append(extra)
+        for f in formats:
+            f['url'] = 'https://example.com/' + f['format_id']
+        args = app.build_command('https://b23.tv/abc', Path.cwd(), 'best', None, 'ffmpeg', playback)
+        options = {'format': args[args.index('-f') + 1], 'quiet': True, 'no_warnings': True}
+        if '-S' in args:
+            options['format_sort'] = args[args.index('-S') + 1].split(',')
+        with yt_dlp.YoutubeDL(options) as ydl:
+            result = ydl.process_ie_result({'id': 'test', 'title': 'test', 'extractor': 'generic', 'formats': formats}, download=False)
+        return result['requested_formats'][0]['format_id']
+
+    def test_compatible_selects_h264_source_keeps_default(self):
+        self.assertEqual(self.select('compatible'), 'h264')
+        self.assertEqual(self.select('source'), 'av1')
+
+    def test_compatible_preserves_4k_when_only_av1_available(self):
+        self.assertEqual(self.select('compatible', {'format_id': '4k', 'height': 2160, 'width': 3840, 'fps': 30, 'vcodec': 'av01.0.12M.08', 'acodec': 'none', 'ext': 'mp4'}), '4k')
+
+    def test_mode_has_separate_output_name(self):
+        compatible = app.build_command('https://b23.tv/abc', Path.cwd(), 'best', None, 'ffmpeg')
+        source = app.build_command('https://b23.tv/abc', Path.cwd(), 'best', None, 'ffmpeg', 'source')
+        self.assertNotEqual(compatible[compatible.index('-o') + 1], source[source.index('-o') + 1])
 
 
 if __name__ == '__main__':

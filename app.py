@@ -45,19 +45,24 @@ def normalize_url(value: str) -> str:
     return url
 
 
-def build_command(url: str, output: Path, quality: str, cookie: Path | None, ffmpeg: str) -> list[str]:
+def build_command(url: str, output: Path, quality: str, cookie: Path | None, ffmpeg: str, playback: str = 'compatible') -> list[str]:
+    if playback not in ('compatible', 'source'):
+        raise ValueError('不支持的播放兼容选项。')
     height = QUALITIES[quality]
     fmt = f'bv*[height<={height}]+ba/b[height<={height}]' if height else 'bv*+ba/b'
     worker = [sys.executable, '--worker'] if FROZEN else [sys.executable, '-u', '-m', 'yt_dlp']
     args = worker + ['--ignore-config', '--no-playlist',
-            '--no-simulate', '--newline', '--progress', '--no-color',
+            '--no-simulate', '--no-quiet', '--newline', '--progress', '--no-color',
             '--socket-timeout', '20', '--retries', '3', '--fragment-retries', '3',
             '--ffmpeg-location', ffmpeg, '--merge-output-format', 'mp4',
             '--windows-filenames', '--no-overwrites', '-f', fmt,
-            '-P', str(output), '-o', '%(title).160B [%(id)s].%(ext)s',
+            '-P', str(output), '-o', '%(title).160B [%(id)s]' + (' [compatible]' if playback == 'compatible' else '') + '.%(ext)s',
             '--progress-template', 'download:__PROGRESS__%(progress)j',
             '--print', 'before_dl:__TITLE__%(title)j',
+            '--print', 'before_dl:__MEDIA__%(.{width,height,fps,vcodec,acodec})j',
             '--print', 'after_move:__FILE__%(filepath)j']
+    if playback == 'compatible':
+        args.extend(['-S', 'res,vcodec:h264,fps,acodec:aac'])
     if cookie:
         args.extend(['--cookies', str(cookie)])
     return args + ['--', url]
@@ -89,6 +94,9 @@ class DownloadManager:
         quality = str(data.get('quality', '1080'))
         if quality not in QUALITIES:
             raise ValueError('不支持的清晰度。')
+        playback = str(data.get('playback', 'compatible'))
+        if playback not in ('compatible', 'source'):
+            raise ValueError('不支持的播放兼容选项。')
         output = Path(str(data.get('output', '')).strip() or ROOT / 'downloads').expanduser()
         if not output.is_absolute():
             raise ValueError('保存目录请填写绝对路径。')
@@ -103,13 +111,13 @@ class DownloadManager:
             self.cancelled.clear()
             self.state.update(status='running', message='正在解析视频…', percent=0,
                               title='', speed='', eta='', files=[], logs=[])
-            self.thread = threading.Thread(target=self.prepare, args=(url, output.resolve(), quality, cookie), daemon=True)
+            self.thread = threading.Thread(target=self.prepare, args=(url, output.resolve(), quality, cookie, playback), daemon=True)
             self.thread.start()
 
-    def prepare(self, url, output, quality, cookie):
+    def prepare(self, url, output, quality, cookie, playback='compatible'):
         try:
             ffmpeg = resolve_ffmpeg(self.log, self.cancelled)
-            self.run(build_command(url, output, quality, cookie, ffmpeg))
+            self.run(build_command(url, output, quality, cookie, ffmpeg, playback))
         except Exception as exc:
             self.log(str(exc))
             self.update(status='cancelled' if self.cancelled.is_set() else 'error',
@@ -144,6 +152,9 @@ class DownloadManager:
                         pass
                 elif line.startswith('__TITLE__'):
                     self.update(title=json.loads(line[len('__TITLE__'):]))
+                elif line.startswith('__MEDIA__'):
+                    media = json.loads(line[len('__MEDIA__'):])
+                    self.log(f"实际格式：{media.get('width', '?')} × {media.get('height', '?')} / {media.get('fps', '?')} fps；视频 {media.get('vcodec', '?')}；音频 {media.get('acodec', '?')}")
                 elif line.startswith('__FILE__'):
                     filename = json.loads(line[len('__FILE__'):])
                     with self.lock:
