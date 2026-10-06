@@ -38,6 +38,9 @@ def main():
         request = urllib.request.Request(f'http://{parsed.netloc}/api/state', headers={'X-App-Token': parse_qs(parsed.query)['token'][0]})
         with urllib.request.urlopen(request, timeout=10) as response:
             assert json.load(response)['status'] == 'idle'
+        request = urllib.request.Request(f'http://{parsed.netloc}/api/login/state', headers={'X-App-Token': parse_qs(parsed.query)['token'][0]})
+        with urllib.request.urlopen(request, timeout=10) as response:
+            assert json.load(response)['status'] in ('saved', 'logged_out')
         print('Packaged UI and authenticated API: OK')
     finally:
         process.terminate()

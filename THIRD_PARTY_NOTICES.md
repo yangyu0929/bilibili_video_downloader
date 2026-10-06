@@ -4,6 +4,7 @@ The MIT license applies to this project's own source code. Bundled components
 retain their own licenses; it does not relicense those components.
 
 - Python: PSF license, https://docs.python.org/3/license.html
+- qrcode: BSD license, https://github.com/lincolnloop/python-qrcode
 - yt-dlp: Unlicense (with separately licensed dependencies), https://github.com/yt-dlp/yt-dlp
 - PyInstaller: GPL-2.0-or-later with a bootloader distribution exception, https://pyinstaller.org/en/stable/license.html
 - imageio-ffmpeg (source installation or runtime download): BSD-2-Clause, https://github.com/imageio/imageio-ffmpeg

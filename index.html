@@ -15,7 +15,8 @@
 <div class="field"><label for="url">视频链接 / BV 号</label><textarea id="url" placeholder="https://www.bilibili.com/video/BV…&#10;也可以直接粘贴 B站分享文字或 b23.tv 短链接" required></textarea></div>
 <div class="row"><div class="field"><label for="output">保存目录</label><input id="output" placeholder="使用程序内的 downloads 文件夹"><p class="hint">可填写其他文件夹的完整路径；不存在时自动创建。</p></div><div class="field"><label for="quality">清晰度上限</label><select id="quality"><option value="1080">1080P</option><option value="best">最高可用</option><option value="720">720P</option><option value="480">480P</option></select></div></div>
 <div class="field"><label for="playback">播放兼容性</label><select id="playback"><option value="compatible">兼容优先（同分辨率优先 H.264）</option><option value="source">自动选择源编码（可能为 AV1 / HEVC）</option></select><p class="hint">画面卡顿或落后于声音时可尝试兼容优先，不转码；若源视频没有对应 H.264，将选用其他编码。不同编码的可用帧率可能不同，优先高帧率可选自动模式。兼容版单独命名，不覆盖旧文件。</p></div>
-<details><summary>登录凭证（可选）</summary><div class="field"><label for="cookie">Netscape 格式 Cookie 文件路径</label><input id="cookie" autocomplete="off" placeholder="例如 C:\Users\你的用户名\cookies.txt"><p class="hint">部分画质或视频需登录后才能访问。文件仅由本机下载工具读取，用于向 B站发起请求；请妥善保管。</p></div></details>
+<div class="field"><label>账号登录（可选）</label><div class="actions"><button type="button" class="secondary" id="login">B站 App 扫码登录</button><button type="button" class="secondary" id="logout" hidden>清除本机登录</button></div><p class="hint" id="login-status" role="status">正在读取登录状态…</p><img id="qr" alt="请使用 B站 App 扫描登录二维码" width="240" height="240" hidden style="background:white;margin-top:12px"><p class="hint">扫码并在手机上确认后，下载自动使用此账号。登录状态仅保存在本机，Windows 下加密保存；账号权限仍决定可用画质。</p></div>
+<details><summary>高级：手动 Cookie 文件（可选）</summary><div class="field"><label for="cookie">Netscape 格式 Cookie 文件路径</label><input id="cookie" autocomplete="off" placeholder="通常无需填写，扫码登录即可"><p class="hint">填写后优先使用此文件，而非扫码账号。</p></div></details>
 <div class="actions"><button id="start" type="submit">开始下载</button><button id="cancel" class="secondary" type="button" disabled>取消下载</button></div><div id="error" role="alert"></div>
 </form>
 <section class="card" aria-live="polite"><div class="status-head"><h2 id="message">准备就绪</h2><span class="pill" id="status">等待下载</span></div><p id="title"></p><progress id="progress" max="100" value="0"></progress><div class="metrics"><span id="percent">0%</span><span id="speed"></span><span id="eta"></span></div><p class="hint">音频和视频可能分别下载，进度会按当前文件显示；完成后自动合并。</p><ul id="files"></ul><details style="margin-bottom:0"><summary>查看运行日志</summary><pre id="logs">暂无日志</pre></details></section>
@@ -30,5 +31,13 @@ function render(s){if(!initialized){$('output').value=s.default_output;initializ
 async function refresh(){if(polling)return;polling=true;try{render(await api('/api/state'));}catch(e){$('message').textContent='无法连接本地程序，请检查启动窗口。';$('start').disabled=true;$('cancel').disabled=true;}finally{polling=false;}}
 $('form').addEventListener('submit',async event=>{event.preventDefault();if(pending)return;pending=true;$('start').disabled=true;$('error').textContent='';try{await api('/api/start',{url:$('url').value,output:$('output').value,quality:$('quality').value,playback:$('playback').value,cookie:$('cookie').value});}catch(e){$('error').textContent=e.message;}finally{pending=false;await refresh();}});
 $('cancel').addEventListener('click',async()=>{$('cancel').disabled=true;try{await api('/api/cancel',{});}catch(e){$('error').textContent=e.message;}await refresh();});
+let loginPolling=false,loginBusy=false,loginTimer=null;
+function showLogin(s){$('login-status').textContent=s.message;$('logout').hidden=!s.saved&&!['waiting','scanned'].includes(s.status);loginPolling=['waiting','scanned'].includes(s.status);if(!loginPolling){$('qr').hidden=true;$('qr').removeAttribute('src');}if(s.qr){$('qr').src=s.qr;$('qr').hidden=false;}}
+async function pollLogin(){if(loginBusy||!loginPolling)return;loginBusy=true;try{showLogin(await api('/api/login/poll',{}));}catch(e){$('login-status').textContent=e.message;}finally{loginBusy=false;}}
+async function loginAction(action){if(loginBusy)return;loginBusy=true;$('login').disabled=true;$('logout').disabled=true;try{showLogin(await api('/api/login/'+action,{}));}catch(e){$('login-status').textContent=e.message;}finally{loginBusy=false;$('login').disabled=false;$('logout').disabled=false;}}
+$('login').addEventListener('click',()=>loginAction('begin'));
+$('logout').addEventListener('click',()=>loginAction('logout'));
+api('/api/login/state').then(showLogin).catch(e=>{$('login-status').textContent=e.message;});
+loginTimer=setInterval(pollLogin,3000);
 refresh();setInterval(refresh,1000);
 </script></body></html>

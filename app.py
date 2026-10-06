@@ -14,6 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 import webbrowser
 from ffmpeg_runtime import resolve_ffmpeg
+from login import QRLogin
 
 FROZEN = getattr(sys, 'frozen', False)
 ROOT = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent
@@ -69,7 +70,8 @@ def build_command(url: str, output: Path, quality: str, cookie: Path | None, ffm
 
 
 class DownloadManager:
-    def __init__(self):
+    def __init__(self, account=None):
+        self.account = account
         self.lock = threading.RLock()
         self.process: subprocess.Popen | None = None
         self.thread: threading.Thread | None = None
@@ -115,13 +117,20 @@ class DownloadManager:
             self.thread.start()
 
     def prepare(self, url, output, quality, cookie, playback='compatible'):
+        temporary_cookie = None
         try:
+            if cookie is None and self.account:
+                temporary_cookie = self.account.export_for_download()
+                cookie = temporary_cookie
             ffmpeg = resolve_ffmpeg(self.log, self.cancelled)
             self.run(build_command(url, output, quality, cookie, ffmpeg, playback))
         except Exception as exc:
             self.log(str(exc))
             self.update(status='cancelled' if self.cancelled.is_set() else 'error',
-                        message='已取消' if self.cancelled.is_set() else '合并工具准备失败，请检查网络后重试。')
+                        message='已取消' if self.cancelled.is_set() else '下载准备失败，请查看日志。')
+        finally:
+            if temporary_cookie:
+                temporary_cookie.unlink(missing_ok=True)
 
     def run(self, args):
         process = None
@@ -213,7 +222,8 @@ class LocalServer(ThreadingHTTPServer):
         super().__init__(('127.0.0.1', port), Handler)
         self.token = secrets.token_urlsafe(32)
         self.origin = f'http://127.0.0.1:{self.server_port}'
-        self.manager = DownloadManager()
+        self.account = QRLogin()
+        self.manager = DownloadManager(self.account)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -228,7 +238,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
-        self.send_header('Content-Security-Policy', "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'")
+        self.send_header('Content-Security-Policy', "default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'")
         self.end_headers()
         self.wfile.write(body)
 
@@ -251,6 +261,8 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200, html, 'text/html; charset=utf-8')
         elif parsed.path == '/api/state' and self.authorized():
             self.reply(200, {**self.server.manager.snapshot(), 'default_output': str(ROOT / 'downloads')})
+        elif parsed.path == '/api/login/state' and self.authorized():
+            self.reply(200, self.server.account.snapshot())
         else:
             self.reply(403, {'error': '请求未授权。'})
 
@@ -266,6 +278,12 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(body)
             if not isinstance(data, dict):
                 raise ValueError('请求格式无效。')
+            if self.path in ('/api/login/begin', '/api/login/poll', '/api/login/logout'):
+                if self.path == '/api/login/logout' and self.server.manager.snapshot()['status'] == 'running':
+                    raise ValueError('请先取消或完成当前下载，再清除登录状态。')
+                action = self.path.rsplit('/', 1)[-1]
+                self.reply(200, getattr(self.server.account, action)())
+                return
             if self.path == '/api/start':
                 self.server.manager.start(data)
             elif self.path == '/api/cancel':

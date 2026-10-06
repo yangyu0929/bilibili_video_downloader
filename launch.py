@@ -15,7 +15,7 @@ def main():
             print('Preparing Python environment...', flush=True)
             subprocess.run([sys.executable, '-m', 'venv', str(ROOT / '.venv')], check=True)
         return subprocess.call([str(PYTHON), str(Path(__file__).resolve())])
-    if any(importlib.util.find_spec(name) is None for name in ('yt_dlp', 'imageio_ffmpeg')):
+    if any(importlib.util.find_spec(name) is None for name in ('yt_dlp', 'imageio_ffmpeg', 'qrcode')):
         print('Installing download tools. First launch requires internet access...', flush=True)
         subprocess.run([str(PYTHON), '-m', 'pip', 'install', '-r', str(ROOT / 'requirements.txt')], check=True)
     return subprocess.call([str(PYTHON), str(ROOT / 'app.py')])

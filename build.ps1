@@ -9,7 +9,7 @@ if (-not (Test-Path -LiteralPath $BuildPython)) {
 if ($LASTEXITCODE -ne 0) { throw 'Failed to install build dependencies.' }
 & $BuildPython -m unittest discover -s tests -v
 if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
-& $BuildPython -m PyInstaller --noconfirm --onedir --name BilibiliDownloader --collect-all yt_dlp --exclude-module imageio_ffmpeg --add-data 'index.html;.' app.py
+& $BuildPython -m PyInstaller --noconfirm --onedir --name BilibiliDownloader --collect-all yt_dlp --copy-metadata qrcode --exclude-module imageio_ffmpeg --add-data 'index.html;.' app.py
 if ($LASTEXITCODE -ne 0) { throw 'Packaging failed.' }
 & $BuildPython scripts/smoke_windows.py
 if ($LASTEXITCODE -ne 0) { throw 'Packaged application smoke test failed.' }
